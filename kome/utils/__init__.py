@@ -1,0 +1,1 @@
+"""KOME utility subpackage."""

@@ -1,0 +1,1 @@
+"""KOME core subpackage."""
