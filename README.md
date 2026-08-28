@@ -1,13 +1,12 @@
 <div align="center">
 
 # KOME 🍚
+
 ```
- ██╗  ██╗  ██████╗  ███╗   ███╗ ███████╗
- ██║ ██╔╝ ██╔═══██╗ ████╗ ████║ ██╔════╝
- █████╔╝  ██║   ██║ ██╔████╔██║ █████╗
- ██╔═██╗  ██║   ██║ ██║╚██╔╝██║ ██╔══╝
- ██║  ██╗ ╚██████╔╝ ██║ ╚═╝ ██║ ███████╗
- ╚═╝  ╚═╝  ╚═════╝  ╚═╝     ╚═╝ ╚══════╝
+ _  ___  __  __ ___
+| |/ / \|  \/  | __|
+|   <| () | |\/| | _|
+|_|\_\\__/|_|  |_|___|
 ```
 
 **🍚 Rice manager for Linux**
@@ -23,7 +22,7 @@
 
 ## What is KOME?
 
-**KOME** (米, Japanese for *rice*) is a lightweight CLI tool that lets you switch between Linux desktop customizations (*rices*) instantly using symbolic links.
+**KOME** (米) is a lightweight CLI tool that lets you switch between Linux desktop customizations (*rices*) instantly using symbolic links.
 
 Instead of copying and overwriting your dotfiles — risking data loss and leaving orphan configs behind — KOME creates symlinks from `~/.config/` to a centralized rice directory. Switching themes is instant, safe, and fully reversible.
 
@@ -52,29 +51,113 @@ Instead of copying and overwriting your dotfiles — risking data loss and leavi
 git clone https://github.com/agusdev/kome.git
 cd kome
 
-# Install in development mode
+# Create a venv and install
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 
 # Verify installation
 kome --version
 ```
 
-## Quick Start
+## Guide: Your First Rice
+
+This walkthrough takes you from zero to a working rice in 5 minutes.
+
+### Step 1: Get a rice
+
+Download a rice from GitHub, r/unixporn, or create your own. For example:
 
 ```bash
-# 1. Add a rice from a local directory
-kome add ~/Downloads/cyber-neon
+git clone https://github.com/someone/hyprland-catppuccin.git ~/Downloads/hyprland-catppuccin
+```
 
-# 2. See what's available
+### Step 2: Make sure it has the right structure
+
+KOME expects a `.config/` directory inside the rice that mirrors your `~/.config/`. If the repo you downloaded doesn't have this structure, reorganize it:
+
+```bash
+cd ~/Downloads/hyprland-catppuccin
+
+# Create the .config/ mirror structure
+mkdir -p .config
+mv hyprland/ .config/hyprland/
+mv waybar/   .config/waybar/
+mv kitty/    .config/kitty/
+```
+
+The final structure should look like this:
+
+```
+hyprland-catppuccin/
+├── .config/
+│   ├── hyprland/
+│   │   └── hyprland.conf
+│   ├── waybar/
+│   │   ├── config.jsonc
+│   │   └── style.css
+│   └── kitty/
+│       └── kitty.conf
+├── reload.sh          ← optional but recommended
+└── deps.txt           ← optional but recommended
+```
+
+### Step 3: Add a reload script (optional)
+
+Create a `reload.sh` so KOME can restart your processes automatically:
+
+```bash
+#!/bin/bash
+killall -q waybar dunst
+sleep 0.5
+waybar &
+dunst &
+hyprctl reload
+```
+
+### Step 4: Add a deps file (optional)
+
+Create `deps.txt` listing the programs your rice needs:
+
+```
+hyprland
+waybar
+kitty
+dunst
+```
+
+KOME will warn you if any of these are missing before applying.
+
+### Step 5: Import it into KOME
+
+```bash
+kome add ~/Downloads/hyprland-catppuccin
+```
+
+This copies the rice into `~/.local/share/kome/rices/`.
+
+### Step 6: Apply it
+
+```bash
+kome apply hyprland-catppuccin
+```
+
+That's it. KOME will:
+1. Back up your current `~/.config/` (first time only)
+2. Check your dependencies
+3. Create symlinks from `~/.config/` → the rice
+4. Run `reload.sh`
+
+### Switching and going back
+
+```bash
+# See what rices you have
 kome list
 
-# 3. Apply it!
-kome apply cyber-neon
+# Switch to a different rice
+kome apply another-rice
 
-# 4. Check status
-kome status
-
-# 5. Don't like it? Go back to your original setup
+# Go back to your original config
 kome restore
 ```
 
@@ -159,17 +242,12 @@ A bash script that restarts the processes affected by your rice. Example for Hyp
 ```bash
 #!/bin/bash
 
-# Kill existing instances
 killall -q waybar dunst
-
-# Wait for processes to close
 sleep 0.5
 
-# Restart
 waybar &
 dunst &
 
-# Reload Hyprland config
 hyprctl reload
 ```
 
@@ -204,8 +282,10 @@ KOME follows the [XDG Base Directory Specification](https://specifications.freed
 ## Development
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
+# Create venv and install
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 
 # Run tests
 pytest -v
