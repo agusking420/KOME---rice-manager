@@ -1,10 +1,4 @@
-"""
-Symlink engine for KOME.
-
-Creates, removes, and verifies symbolic links between a rice's
-dotfiles and the user's ``~/.config/`` directory (and extra
-mapping targets).
-"""
+"""Symlink engine — creates, removes, and verifies symlinks for rices."""
 
 from __future__ import annotations
 
@@ -23,17 +17,8 @@ class Symlinker:
     def __init__(self, target_dir: Path | None = None) -> None:
         self.target_dir = target_dir or USER_CONFIG_DIR
 
-    # -----------------------------------------------------------------
-    # Unlink (tear down current rice)
-    # -----------------------------------------------------------------
-
     def unlink_current(self, state: KomeState) -> int:
-        """
-        Remove all symlinks registered in *state* and restore any
-        ``.bak`` files.
-
-        Returns the number of symlinks successfully removed.
-        """
+        """Remove all symlinks in state and restore .bak files. Returns count removed."""
         removed = 0
 
         for record in state.symlinks:
@@ -44,46 +29,27 @@ class Symlinker:
                 logger.info(f"Removed symlink: {link_path}")
                 removed += 1
             elif link_path.exists():
-                # Someone replaced our symlink with a real file — warn
-                # but don't delete it.
                 logger.warning(
                     f"Expected symlink but found real file: {link_path} — skipping."
                 )
             else:
                 logger.info(f"Symlink already gone: {link_path}")
-                removed += 1  # still counts as "cleaned"
+                removed += 1
 
-        # Restore .bak files
         restored = self._restore_bak_files(state.backup_files)
         if restored:
             logger.success(f"Restored {restored} backed‐up file(s).")
 
         return removed
 
-    # -----------------------------------------------------------------
-    # Link (set up new rice)
-    # -----------------------------------------------------------------
-
     def create_links(
         self, rice: Rice
     ) -> tuple[list[SymlinkRecord], list[BackupRecord]]:
-        """
-        Create symlinks for *rice*.
-
-        For each top‐level entry in the rice's ``.config/``, a symlink
-        is created under ``~/.config/``.  If the destination already
-        exists as a real file/directory, it is renamed to ``.bak``.
-
-        Additionally processes ``mapping.json`` extra links.
-
-        Returns:
-            A tuple of ``(symlink_records, backup_records)`` for
-            persisting in state.json.
-        """
+        """Create symlinks for a rice. Returns (symlink_records, backup_records)."""
         symlinks: list[SymlinkRecord] = []
         backups: list[BackupRecord] = []
 
-        # --- Standard .config/ entries --------------------------------
+        # Standard .config/ entries
         for entry in rice.get_config_entries():
             link_path = self.target_dir / entry.name
             target_path = entry.resolve()
@@ -98,7 +64,7 @@ class Symlinker:
                 target=str(target_path),
             ))
 
-        # --- Extra mappings (mapping.json) ----------------------------
+        # Extra mappings (mapping.json)
         for mapping in rice.extra_mappings:
             source_abs, target_abs = mapping.resolve(rice.path)
 
@@ -108,7 +74,6 @@ class Symlinker:
                 )
                 continue
 
-            # Ensure parent directory of target exists
             target_abs.parent.mkdir(parents=True, exist_ok=True)
 
             bak = self._prepare_destination(target_abs)
@@ -123,17 +88,8 @@ class Symlinker:
 
         return symlinks, backups
 
-    # -----------------------------------------------------------------
-    # Verify
-    # -----------------------------------------------------------------
-
     def verify_links(self, state: KomeState) -> tuple[list[str], list[str]]:
-        """
-        Verify the integrity of the currently active symlinks.
-
-        Returns:
-            A tuple of ``(valid, broken)`` lists of link paths.
-        """
+        """Verify symlink integrity. Returns (valid, broken) path lists."""
         valid: list[str] = []
         broken: list[str] = []
 
@@ -150,24 +106,12 @@ class Symlinker:
                 else:
                     broken.append(record.link)
             else:
-                # Exists but is not a symlink — someone replaced it
                 broken.append(record.link)
 
         return valid, broken
 
-    # -----------------------------------------------------------------
-    # Internal helpers
-    # -----------------------------------------------------------------
-
     def _prepare_destination(self, dest: Path) -> BackupRecord | None:
-        """
-        Handle an existing destination path before creating a symlink.
-
-        - If *dest* is already a symlink → remove it silently.
-        - If *dest* is a real file/dir → rename to ``.bak`` and return
-          a :class:`BackupRecord`.
-        - If *dest* doesn't exist → do nothing.
-        """
+        """Handle existing destination: remove old symlinks, .bak real files."""
         if dest.is_symlink():
             dest.unlink()
             logger.info(f"Removed old symlink: {dest}")
@@ -176,7 +120,7 @@ class Symlinker:
         if dest.exists():
             bak_path = dest.with_name(dest.name + BAK_SUFFIX)
 
-            # If a .bak already exists, add a numeric suffix
+            # Numeric suffix if .bak already exists
             counter = 1
             while bak_path.exists():
                 bak_path = dest.with_name(f"{dest.name}{BAK_SUFFIX}.{counter}")
@@ -190,20 +134,14 @@ class Symlinker:
 
     @staticmethod
     def _make_symlink(target: Path, link: Path) -> None:
-        """Create a symlink at *link* pointing to *target*."""
-        # Ensure parent directory exists
+        """Create a symlink at link pointing to target."""
         link.parent.mkdir(parents=True, exist_ok=True)
-
         os.symlink(str(target), str(link))
         logger.success(f"Linked: {link} → {target}")
 
     @staticmethod
     def _restore_bak_files(backup_records: list[BackupRecord]) -> int:
-        """
-        Restore ``.bak`` files to their original paths.
-
-        Returns the number of files successfully restored.
-        """
+        """Restore .bak files to their original paths. Returns count restored."""
         count = 0
         for record in backup_records:
             bak_path = Path(record.backup)
@@ -213,7 +151,6 @@ class Symlinker:
                 logger.warning(f"Backup file missing, cannot restore: {bak_path}")
                 continue
 
-            # If something now occupies the original path, remove it
             if original_path.is_symlink():
                 original_path.unlink()
             elif original_path.exists():

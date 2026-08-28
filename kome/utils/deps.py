@@ -1,9 +1,4 @@
-"""
-Dependency checking for rices.
-
-Reads a rice's ``deps.txt`` and verifies that the listed programs
-are available on the system using :func:`shutil.which`.
-"""
+"""Dependency checking — verifies programs exist via shutil.which."""
 
 from __future__ import annotations
 
@@ -12,12 +7,7 @@ from pathlib import Path
 
 
 def parse_deps_file(path: Path) -> list[str]:
-    """
-    Parse a ``deps.txt`` file.
-
-    Each non-empty line that doesn't start with ``#`` is treated as a
-    program name.  Leading/trailing whitespace is stripped.
-    """
+    """Parse deps.txt: one program name per line, # comments ignored."""
     if not path.is_file():
         return []
 
@@ -30,13 +20,7 @@ def parse_deps_file(path: Path) -> list[str]:
 
 
 def check_dependencies(deps: list[str]) -> tuple[list[str], list[str]]:
-    """
-    Check which programs from *deps* are installed.
-
-    Returns:
-        A ``(found, missing)`` tuple where each element is a list of
-        program names.
-    """
+    """Return (found, missing) lists for the given program names."""
     found: list[str] = []
     missing: list[str] = []
 

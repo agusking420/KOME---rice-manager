@@ -1,9 +1,4 @@
-"""
-Backup management for KOME.
-
-Creates a compressed tarball of the user's ``~/.config/`` directory
-on first run so the original setup can always be recovered.
-"""
+"""Backup management — tar.gz of ~/.config/ for safe rollback."""
 
 from __future__ import annotations
 
@@ -16,7 +11,7 @@ from kome.utils import logger
 
 
 class BackupManager:
-    """Creates and restores full backups of ``~/.config/``."""
+    """Creates and restores full backups of ~/.config/."""
 
     def __init__(
         self,
@@ -26,20 +21,10 @@ class BackupManager:
         self.config_dir = config_dir or USER_CONFIG_DIR
         self.backups_dir = backups_dir or BACKUPS_DIR
 
-    # -----------------------------------------------------------------
-    # Full backup
-    # -----------------------------------------------------------------
-
     def create_initial_backup(self) -> str | None:
-        """
-        Create a ``.tar.gz`` of ``~/.config/`` if no backup exists yet.
-
-        Returns the backup file path as a string, or ``None`` if a
-        backup was already present.
-        """
+        """Create a .tar.gz of ~/.config/ if no backup exists yet. Returns path or None."""
         self.backups_dir.mkdir(parents=True, exist_ok=True)
 
-        # Check if we already did an initial backup
         existing = list(self.backups_dir.glob("config_backup_*.tar.gz"))
         if existing:
             logger.info("Initial backup already exists — skipping.")
@@ -50,51 +35,33 @@ class BackupManager:
             return None
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-        backup_name = f"config_backup_{timestamp}.tar.gz"
-        backup_path = self.backups_dir / backup_name
+        backup_path = self.backups_dir / f"config_backup_{timestamp}.tar.gz"
 
         logger.info(f"Creating initial backup of {self.config_dir}…")
 
         try:
             with tarfile.open(backup_path, "w:gz") as tar:
-                # Walk through config dir, skipping symlinks
-                # (symlinks are likely KOME-managed or broken)
                 for item in self.config_dir.iterdir():
                     if item.is_symlink():
-                        continue
+                        continue  # Skip KOME-managed or broken symlinks
                     tar.add(
                         str(item),
                         arcname=item.relative_to(self.config_dir.parent),
                     )
 
             size_mb = backup_path.stat().st_size / (1024 * 1024)
-            logger.success(
-                f"Backup created: {backup_path} ({size_mb:.1f} MB)"
-            )
+            logger.success(f"Backup created: {backup_path} ({size_mb:.1f} MB)")
             return str(backup_path)
 
         except OSError as exc:
             logger.error(f"Failed to create backup: {exc}")
             return None
 
-    # -----------------------------------------------------------------
-    # Full restore
-    # -----------------------------------------------------------------
-
     def restore_full_backup(self, backup_path: str | None = None) -> bool:
-        """
-        Extract the full backup tarball to restore the original
-        ``~/.config/`` state.
-
-        If *backup_path* is ``None``, the most recent backup in the
-        backups directory is used.
-
-        Returns ``True`` on success.
-        """
+        """Extract the full backup tarball. Uses most recent if path is None."""
         if backup_path:
             tar_path = Path(backup_path)
         else:
-            # Find the most recent backup
             backups = sorted(self.backups_dir.glob("config_backup_*.tar.gz"))
             if not backups:
                 logger.error("No backup found — cannot restore.")
@@ -111,14 +78,11 @@ class BackupManager:
 
         try:
             with tarfile.open(tar_path, "r:gz") as tar:
-                # Use 'tar' filter which is more permissive than 'data'
-                # but still prevents path traversal.  Some configs contain
-                # absolute symlinks (e.g. Discord) that 'data' rejects.
+                # 'tar' filter allows absolute symlinks (e.g. Discord) that 'data' rejects
                 try:
                     tar.extractall(path=extract_dir, filter="tar")
                 except TypeError:
-                    # Python < 3.12 doesn't support the filter kwarg
-                    tar.extractall(path=extract_dir)
+                    tar.extractall(path=extract_dir)  # Python < 3.12
 
             logger.success("Full backup restored successfully.")
             return True
@@ -126,4 +90,3 @@ class BackupManager:
         except (tarfile.TarError, OSError) as exc:
             logger.error(f"Restore failed: {exc}")
             return False
-

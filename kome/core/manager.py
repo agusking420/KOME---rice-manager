@@ -1,9 +1,4 @@
-"""
-KOME Rice Manager — main orchestrator.
-
-This module ties together the symlinker, state manager, backup system,
-and dependency checker into a cohesive API used by the CLI.
-"""
+"""KOME Rice Manager — main orchestrator tying all subsystems together."""
 
 from __future__ import annotations
 
@@ -23,11 +18,7 @@ from kome.utils.process import run_reload_script
 
 
 class RiceManager:
-    """
-    High‐level orchestrator for all rice management operations.
-
-    Each public method corresponds roughly to a CLI command.
-    """
+    """High-level orchestrator — each public method maps to a CLI command."""
 
     def __init__(self) -> None:
         ensure_dirs()
@@ -35,12 +26,8 @@ class RiceManager:
         self.symlinker = Symlinker()
         self.backup_mgr = BackupManager()
 
-    # -----------------------------------------------------------------
-    # list
-    # -----------------------------------------------------------------
-
     def list_rices(self) -> list[Rice]:
-        """Return all rices found in the rices directory."""
+        """Return all valid rices in the rices directory."""
         rices: list[Rice] = []
 
         if not RICES_DIR.is_dir():
@@ -56,10 +43,6 @@ class RiceManager:
 
         return rices
 
-    # -----------------------------------------------------------------
-    # apply
-    # -----------------------------------------------------------------
-
     def apply(
         self,
         name: str,
@@ -67,20 +50,7 @@ class RiceManager:
         force: bool = False,
         no_reload: bool = False,
     ) -> bool:
-        """
-        Apply a rice by name.
-
-        Steps:
-            1. Validate the rice exists
-            2. Create initial backup (first run only)
-            3. Check dependencies
-            4. Unlink the current rice (if any)
-            5. Create new symlinks
-            6. Update state
-            7. Run reload.sh
-
-        Returns ``True`` on success.
-        """
+        """Apply a rice: backup → deps check → unlink old → symlink new → reload."""
         rice_path = RICES_DIR / name
         if not rice_path.is_dir():
             logger.error(f"Rice '{name}' not found in {RICES_DIR}")
@@ -92,27 +62,24 @@ class RiceManager:
             logger.error(str(exc))
             return False
 
-        # Validate structure
         warnings = rice.validate()
         for w in warnings:
             logger.warning(w)
 
         state = self.state_mgr.load()
 
-        # Refuse to apply the same rice again (unless forced)
         if state.active_rice == name and not force:
             logger.info(f"Rice '{name}' is already active. Use --force to reapply.")
             return True
 
-        # --- Step 2: Initial backup ---
+        # Initial backup (first run only)
         if state.first_run_backup is None:
             backup_path = self.backup_mgr.create_initial_backup()
             if backup_path:
                 self.state_mgr.set_first_run_backup(backup_path)
-                # Reload state after modification
                 state = self.state_mgr.load()
 
-        # --- Step 3: Check dependencies ---
+        # Check dependencies
         if rice.has_deps and not force:
             missing = rice.get_missing_deps()
             if missing:
@@ -125,29 +92,29 @@ class RiceManager:
             else:
                 logger.success("All dependencies satisfied.")
 
-        # --- Step 4: Unlink current rice ---
+        # Unlink current rice
         if state.active_rice and state.symlinks:
             logger.header(f"Removing rice: {state.active_rice}")
             self.symlinker.unlink_current(state)
 
-        # --- Step 5: Create new symlinks ---
+        # Create new symlinks
         logger.header(f"Applying rice: {name}")
         symlink_records, backup_records = self.symlinker.create_links(rice)
 
         if not symlink_records:
             logger.warning("No symlinks were created — the rice might be empty.")
 
-        # --- Step 6: Update state ---
+        # Update state
         self.state_mgr.register_apply(name, symlink_records, backup_records)
 
-        # --- Step 7: Reload ---
+        # Reload
         if not no_reload and rice.has_reload:
             logger.header("Reloading environment")
             run_reload_script(rice.path)
         elif not rice.has_reload:
             logger.info("No reload.sh — you may need to restart processes manually.")
 
-        # --- Summary ---
+        # Summary
         logger.header("Done")
         logger.success(
             f"Rice '{name}' applied with {len(symlink_records)} symlink(s)."
@@ -157,35 +124,23 @@ class RiceManager:
 
         return True
 
-    # -----------------------------------------------------------------
-    # restore
-    # -----------------------------------------------------------------
-
     def restore(self) -> bool:
-        """
-        Restore the user's original configuration.
-
-        Removes all active symlinks, restores .bak files, and
-        optionally extracts the full initial backup.
-        """
+        """Remove active rice symlinks and restore original config from backup."""
         state = self.state_mgr.load()
 
         if not state.active_rice and not state.first_run_backup:
             logger.info("Nothing to restore — no rice is active and no backup exists.")
             return True
 
-        # Remove current symlinks
         if state.active_rice and state.symlinks:
             logger.header(f"Removing rice: {state.active_rice}")
             self.symlinker.unlink_current(state)
 
-        # Restore full backup if available
         if state.first_run_backup:
             logger.header("Restoring full backup")
             self.backup_mgr.restore_full_backup(state.first_run_backup)
 
-        # Clear state
-        # Preserve the first_run_backup reference so it's not recreated
+        # Preserve the first_run_backup ref so it's not recreated
         first_run = state.first_run_backup
         self.state_mgr.clear()
         if first_run:
@@ -194,17 +149,8 @@ class RiceManager:
         logger.success("Configuration restored to original state.")
         return True
 
-    # -----------------------------------------------------------------
-    # status
-    # -----------------------------------------------------------------
-
     def status(self) -> dict:
-        """
-        Return the current status as a dict suitable for display.
-
-        Keys: ``active_rice``, ``applied_at``, ``symlinks_total``,
-        ``valid``, ``broken``, ``first_run_backup``.
-        """
+        """Return current status dict for display."""
         state = self.state_mgr.load()
 
         result = {
@@ -223,28 +169,17 @@ class RiceManager:
 
         return result
 
-    # -----------------------------------------------------------------
-    # add
-    # -----------------------------------------------------------------
-
     def add(self, source: str) -> bool:
-        """
-        Import a rice from *source* (directory, ``.zip``, or ``.tar.gz``).
-
-        The rice is copied/extracted into the rices directory.
-        Returns ``True`` on success.
-        """
+        """Import a rice from a directory, .zip, or .tar.gz."""
         source_path = Path(source).resolve()
 
         if not source_path.exists():
             logger.error(f"Source not found: {source_path}")
             return False
 
-        # --- Handle archives -----------------------------------------
         if source_path.is_file():
             return self._add_from_archive(source_path)
 
-        # --- Handle directory ----------------------------------------
         if source_path.is_dir():
             return self._add_from_directory(source_path)
 
@@ -252,7 +187,6 @@ class RiceManager:
         return False
 
     def _add_from_directory(self, source: Path) -> bool:
-        """Copy a rice directory into the rices store."""
         dest = RICES_DIR / source.name
 
         if dest.exists():
@@ -262,7 +196,6 @@ class RiceManager:
             )
             return False
 
-        # Validate it looks like a rice
         try:
             Rice.from_directory(source)
         except ValueError as exc:
@@ -274,9 +207,7 @@ class RiceManager:
         return True
 
     def _add_from_archive(self, archive: Path) -> bool:
-        """Extract a .zip or .tar.gz archive into the rices store."""
         name = archive.stem
-        # Handle .tar.gz double extension
         if name.endswith(".tar"):
             name = name[:-4]
 
@@ -295,7 +226,7 @@ class RiceManager:
             if archive.suffix == ".zip":
                 with zipfile.ZipFile(archive, "r") as zf:
                     zf.extractall(str(dest))
-            elif archive.name.endswith(".tar.gz") or archive.name.endswith(".tgz"):
+            elif archive.name.endswith((".tar.gz", ".tgz")):
                 with tarfile.open(archive, "r:gz") as tf:
                     tf.extractall(str(dest), filter="data")
             elif archive.name.endswith(".tar"):
@@ -306,22 +237,18 @@ class RiceManager:
                 return False
         except (zipfile.BadZipFile, tarfile.TarError, OSError) as exc:
             logger.error(f"Extraction failed: {exc}")
-            # Clean up partial extraction
             if dest.exists():
                 shutil.rmtree(str(dest))
             return False
 
-        # If the archive had a single top‐level directory, flatten it
-        # (e.g. my-rice.zip → my-rice/my-rice/.config → my-rice/.config)
+        # Flatten single top-level directory from archive
         contents = list(dest.iterdir())
         if len(contents) == 1 and contents[0].is_dir():
             inner = contents[0]
-            # Move all children of inner to dest
             for child in inner.iterdir():
                 child.rename(dest / child.name)
             inner.rmdir()
 
-        # Validate
         try:
             rice = Rice.from_directory(dest)
             logger.success(f"Added rice '{rice.name}' from archive.")
@@ -331,17 +258,8 @@ class RiceManager:
             shutil.rmtree(str(dest))
             return False
 
-    # -----------------------------------------------------------------
-    # remove
-    # -----------------------------------------------------------------
-
     def remove(self, name: str) -> bool:
-        """
-        Remove a rice from the rices store.
-
-        Blocks removal if the rice is currently active.
-        Returns ``True`` on success.
-        """
+        """Remove a rice. Blocks if it's currently active."""
         rice_path = RICES_DIR / name
 
         if not rice_path.is_dir():

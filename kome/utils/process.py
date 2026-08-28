@@ -1,8 +1,4 @@
-"""
-Process management utilities for KOME.
-
-Handles executing rice reload scripts and checking running processes.
-"""
+"""Process utilities — reload script execution and process detection."""
 
 from __future__ import annotations
 
@@ -14,21 +10,12 @@ from kome.utils import logger
 
 
 def run_reload_script(rice_path: Path, *, timeout: int = 30) -> bool:
-    """
-    Execute the ``reload.sh`` script found inside *rice_path*.
-
-    The script is run with ``bash`` in a subprocess.  A *timeout* (in
-    seconds) guards against runaway scripts.
-
-    Returns:
-        ``True`` if the script ran successfully, ``False`` otherwise.
-    """
+    """Execute reload.sh from the rice directory. Returns True on success."""
     script = rice_path / "reload.sh"
     if not script.is_file():
         logger.warning("No reload.sh found — skipping process reload.")
         return False
 
-    # Ensure the script is executable
     if not os.access(script, os.X_OK):
         script.chmod(script.stat().st_mode | 0o755)
 
@@ -54,10 +41,7 @@ def run_reload_script(rice_path: Path, *, timeout: int = 30) -> bool:
         return True
 
     except subprocess.TimeoutExpired:
-        logger.error(
-            f"reload.sh timed out after {timeout}s — "
-            "you may need to restart your session manually."
-        )
+        logger.error(f"reload.sh timed out after {timeout}s — restart manually.")
         return False
     except FileNotFoundError:
         logger.error("bash not found — cannot execute reload.sh.")
@@ -68,16 +52,8 @@ def run_reload_script(rice_path: Path, *, timeout: int = 30) -> bool:
 
 
 def is_process_running(name: str) -> bool:
-    """
-    Check if a process with the given *name* is currently running.
-
-    Uses ``pgrep`` under the hood.
-    """
+    """Check if a process is running (via pgrep)."""
     try:
-        result = subprocess.run(
-            ["pgrep", "-x", name],
-            capture_output=True,
-        )
-        return result.returncode == 0
+        return subprocess.run(["pgrep", "-x", name], capture_output=True).returncode == 0
     except FileNotFoundError:
         return False
